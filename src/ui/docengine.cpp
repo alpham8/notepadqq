@@ -64,6 +64,37 @@ QTextCodec* detectLegacyCodec(const QByteArray& contents)
     return codec;
 }
 
+constexpr qsizetype kUtf16CodeUnitsPerZeroByte = 100;
+
+QTextCodec* detectUtf16WithoutBom(const QByteArray& contents)
+{
+    if (contents.size() < 2 || contents.size() % 2 != 0) {
+        return nullptr;
+    }
+
+    const bool isLittleEndian = contents[0] != '\0' && contents[1] == '\0';
+    const bool isBigEndian = contents[0] == '\0' && contents[1] != '\0';
+    if (!isLittleEndian && !isBigEndian) {
+        return nullptr;
+    }
+
+    qsizetype zeroHighBytes = 0;
+    for (qsizetype i = isLittleEndian ? 1 : 0; i < contents.size(); i += 2) {
+        zeroHighBytes += contents[i] == '\0' ? 1 : 0;
+    }
+    if (zeroHighBytes * kUtf16CodeUnitsPerZeroByte < contents.size() / 2) {
+        return nullptr;
+    }
+
+    QTextCodec* codec = QTextCodec::codecForName(isLittleEndian ? "UTF-16LE" : "UTF-16BE");
+    const QString text = codec->toUnicode(contents);
+    if (!QStringView(text).isValidUtf16() || text.contains(QChar::Null)) {
+        return nullptr;
+    }
+
+    return codec;
+}
+
 } // namespace
 
 DocEngine::DocEngine(TopEditorContainer* topEditorContainer, QObject* parent)
@@ -811,7 +842,13 @@ bool DocEngine::writeFromString(QIODevice* io, const DecodedText& write)
     if (!io->open(QIODevice::WriteOnly))
         return false;
 
-    QByteArray data = write.codec->fromUnicode(write.text);
+    QByteArray data;
+    if (!write.bom && isUtf16Codec(write.codec)) {
+        QTextCodec::ConverterState state(QTextCodec::IgnoreHeader);
+        data = write.codec->fromUnicode(write.text.constData(), write.text.size(), &state);
+    } else {
+        data = write.codec->fromUnicode(write.text);
+    }
 
     // Some codecs always put the BOM (e.g. UTF-16BE).
     // Others don't (e.g. UTF-8) so we have to manually
@@ -844,6 +881,12 @@ bool DocEngine::writeFromString(QIODevice* io, const DecodedText& write)
     io->close();
 
     return true;
+}
+
+bool DocEngine::isUtf16Codec(const QTextCodec* codec)
+{
+    const int mib = codec->mibEnum();
+    return mib == MIB_UTF_16LE || mib == MIB_UTF_16BE || mib == MIB_UTF_16;
 }
 
 bool DocEngine::write(QIODevice* io, Editor* editor)
@@ -1084,6 +1127,11 @@ DocEngine::DecodedText DocEngine::decodeText(const QByteArray& contents)
     QTextCodec* bomCodec = QTextCodec::codecForUtfText(contents, nullptr);
     if (bomCodec != nullptr) {
         return decodeText(contents, bomCodec, true);
+    }
+
+    QTextCodec* utf16Codec = detectUtf16WithoutBom(contents);
+    if (utf16Codec != nullptr) {
+        return decodeText(contents, utf16Codec, false);
     }
 
     // Check for valid UTF-8 before asking uchardet: its statistical guess takes short UTF-8 text with

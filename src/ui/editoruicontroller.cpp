@@ -190,7 +190,8 @@ void EditorUiController::refreshCurrentEditor(Editor* editor)
     }
 
     QString encoding;
-    if (editor->codec()->mibEnum() == MIB_UTF_8 && !editor->bom()) {
+    const bool isUnicodeCodec = editor->codec()->mibEnum() == MIB_UTF_8 || DocEngine::isUtf16Codec(editor->codec());
+    if (isUnicodeCodec && !editor->bom()) {
         encoding = m_window.tr("%1 w/o BOM").arg(QString::fromUtf8(editor->codec()->name()));
     } else {
         encoding = QString::fromUtf8(editor->codec()->name());

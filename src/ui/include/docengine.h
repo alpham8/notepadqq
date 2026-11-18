@@ -205,6 +205,7 @@ public:
     static DocEngine::DecodedText readToString(QFile* file);
     static DocEngine::DecodedText readToString(QFile* file, QTextCodec* codec, bool bom);
     static bool writeFromString(QIODevice* io, const DecodedText& write);
+    static bool isUtf16Codec(const QTextCodec* codec);
 
     /**
      * @brief Write the provided Editor content to the specified IO device, using
@@ -259,8 +260,9 @@ private:
      * @brief Decodes a byte array into a string, trying to guess the best
      *        codec.
      *
-     * A BOM wins, then valid UTF-8 (including pure ASCII). Only content
-     * that is neither is handed to uchardet, falling back to windows-1252.
+     * A BOM wins, then UTF-16 without BOM, then valid UTF-8 (including pure
+     * ASCII). Only content that is none of these is handed to uchardet,
+     * falling back to windows-1252.
      * @param contents Complete file content, possibly starting with a BOM.
      * @return The decoded text and the codec used; bom is set when the
      *         content started with one.

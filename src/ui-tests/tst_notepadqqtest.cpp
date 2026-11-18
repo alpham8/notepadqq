@@ -3,6 +3,7 @@
 #include "include/mainwindow.h"
 #include "include/notepadqq.h"
 
+#include <QBuffer>
 #include <QCloseEvent>
 #include <QPointer>
 #include <QSettings>
@@ -26,6 +27,8 @@ private Q_SLOTS:
     void openingFileKeepsTabThatIsStillLoading();
     void readToStringDetectsEncoding_data();
     void readToStringDetectsEncoding();
+    void writeFromStringKeepsUtf16WithoutBom_data();
+    void writeFromStringKeepsUtf16WithoutBom();
 
 private:
     QTemporaryDir m_settingsDirectory;
@@ -181,6 +184,12 @@ void NotepadqqTest::openingFileKeepsTabThatIsStillLoading()
 static QByteArray encodeAs(const char* codecName, const QString& text)
 { return QTextCodec::codecForName(codecName)->fromUnicode(text); }
 
+static QByteArray encodeWithoutBom(const char* codecName, const QString& text)
+{
+    QTextCodec::ConverterState state(QTextCodec::IgnoreHeader);
+    return QTextCodec::codecForName(codecName)->fromUnicode(text.constData(), text.size(), &state);
+}
+
 // Every row is a file content and the text a user expects to see when opening it. The expected codec is only
 // checked where it is unambiguous: for single-byte encodings uchardet may pick any codec that decodes the
 // sample correctly, e.g. ISO-8859-3 instead of ISO-8859-1 for German text.
@@ -219,6 +228,16 @@ void NotepadqqTest::readToStringDetectsEncoding_data()
     // Latin-1 after a long ASCII part was decoded as UTF-8, turning every umlaut into U+FFFD.
     QTest::newRow("latin1-after-64k") << encodeAs("ISO-8859-1", asciiFiller + QStringLiteral("Grüße\n"))
                                       << asciiFiller + QStringLiteral("Grüße\n") << QByteArray();
+
+    const QString german = QStringLiteral("Die Größe der Straße ändert sich.\n");
+    const QString japanese = QStringLiteral("1. これは日本語のテキストです。\n");
+    QTest::newRow("utf16le-german") << encodeWithoutBom("UTF-16LE", german) << german << QByteArray("UTF-16LE");
+    QTest::newRow("utf16be-german") << encodeWithoutBom("UTF-16BE", german) << german << QByteArray("UTF-16BE");
+    QTest::newRow("utf16le-japanese") << encodeWithoutBom("UTF-16LE", japanese) << japanese << QByteArray("UTF-16LE");
+    QTest::newRow("ascii-with-nul-is-not-utf16")
+        << QByteArray("Hello\0World!", 12) << QString::fromLatin1("Hello\0World!", 12) << QByteArray("UTF-8");
+    QTest::newRow("aligned-nul-is-not-utf16")
+        << QByteArray("A\0\0\0B\0", 6) << QString::fromLatin1("A\0\0\0B\0", 6) << QByteArray("UTF-8");
 }
 
 // Ensures files are decoded with the encoding they were written in when no BOM tells it.
@@ -244,6 +263,38 @@ void NotepadqqTest::readToStringDetectsEncoding()
     if (!expectedCodec.isEmpty()) {
         QCOMPARE(decoded.codec->name(), expectedCodec);
     }
+}
+
+void NotepadqqTest::writeFromStringKeepsUtf16WithoutBom_data()
+{
+    QTest::addColumn<QByteArray>("codecName");
+    QTest::addColumn<bool>("bom");
+
+    QTest::newRow("utf16le") << QByteArray("UTF-16LE") << false;
+    QTest::newRow("utf16be") << QByteArray("UTF-16BE") << false;
+    QTest::newRow("utf16le-bom") << QByteArray("UTF-16LE") << true;
+    QTest::newRow("utf16be-bom") << QByteArray("UTF-16BE") << true;
+}
+
+// Ensures saving writes a BOM exactly when the document has one, so a file opened without BOM is saved unchanged.
+void NotepadqqTest::writeFromStringKeepsUtf16WithoutBom()
+{
+    QFETCH(QByteArray, codecName);
+    QFETCH(bool, bom);
+
+    const QString text = QStringLiteral("Größe\n");
+    const QByteArray expected =
+        bom ? encodeAs(codecName.constData(), text) : encodeWithoutBom(codecName.constData(), text);
+
+    DocEngine::DecodedText document;
+    document.text = text;
+    document.codec = QTextCodec::codecForName(codecName);
+    document.bom = bom;
+
+    QBuffer buffer;
+    QVERIFY(DocEngine::writeFromString(&buffer, document));
+
+    QCOMPARE(buffer.data(), expected);
 }
 
 QTEST_MAIN(NotepadqqTest)
