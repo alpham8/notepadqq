@@ -39,6 +39,9 @@
 #define COPYRIGHT_YEAR "2026"
 
 #define MIB_UTF_8 106
+#define MIB_UTF_16BE 1013
+#define MIB_UTF_16LE 1014
+#define MIB_UTF_16 1015
 
 /**
  * @brief Global information and utility functions.
