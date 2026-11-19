@@ -381,13 +381,41 @@ UiDriver.registerEventHandler("C_FUN_GET_LANGUAGES", function(msg, data, prevRet
     return Languages.languages;
 });
 
+/**
+ * Selection and link colors of the current CodeMirror theme. CodeMirror only creates the elements that carry them
+ * while text is selected or a link is visible, so they are read from hidden probes styled like the editor.
+ */
+function readCodeMirrorAccentColors(themedElement) {
+    var probe = document.createElement("div");
+    probe.className = themedElement.className + " CodeMirror-focused";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+
+    var selection = document.createElement("div");
+    selection.className = "CodeMirror-selected";
+    var link = document.createElement("span");
+    link.className = "cm-link";
+    probe.appendChild(selection);
+    probe.appendChild(link);
+    document.body.appendChild(probe);
+
+    var colors = {
+        selection: window.getComputedStyle(selection).backgroundColor,
+        link: window.getComputedStyle(link).color
+    };
+    probe.remove();
+
+    return colors;
+}
+
 UiDriver.registerEventHandler("C_CMD_SET_THEME", function(msg, data, prevReturn) {
     var link = undefined;
     if (data.path != "") {
         var stylesheet = $("link[href='" + data.path + "']");
         if (stylesheet.length > 0) {
-            // Stylesheet already exists, move it to the bottom
+            // Stylesheet already exists, move it to the bottom. Moving reloads it, so wait for it like for a new one.
             stylesheet.appendTo('head');
+            link = stylesheet[0];
         } else {
             // Add the stylesheet
             link = addStylesheet(data.path);
@@ -397,10 +425,12 @@ UiDriver.registerEventHandler("C_CMD_SET_THEME", function(msg, data, prevReturn)
     if (link === undefined) {
         editor.setOption("theme", data.name);
         ScrollbarTheme.update(".CodeMirror");
+        ThemeColors.report(".CodeMirror", readCodeMirrorAccentColors);
     } else {
         link.onload = function () {
             editor.setOption("theme", data.name);
             ScrollbarTheme.update(".CodeMirror");
+            ThemeColors.report(".CodeMirror", readCodeMirrorAccentColors);
         }
     }
 });
@@ -796,6 +826,7 @@ $(document).ready(function () {
     editor.focus();
 
     ScrollbarTheme.update(".CodeMirror");
+    ThemeColors.report(".CodeMirror", readCodeMirrorAccentColors);
 
     UiDriver.sendMessage("J_EVT_READY", null);
 });

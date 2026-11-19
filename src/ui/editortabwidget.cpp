@@ -234,6 +234,8 @@ void EditorTabWidget::setTabBarHidden(bool yes)
 
 void EditorTabWidget::setTabBarHighlight(bool yes)
 {
+    m_isTabBarHighlighted = yes;
+
     // Get colors from palette so it doesn't look fugly.
     QPalette palette = tabBar()->palette();
     palette.setColor(QPalette::Highlight,
@@ -274,6 +276,15 @@ void EditorTabWidget::mouseReleaseEvent(QMouseEvent* ev)
     }
 
     QTabWidget::mouseReleaseEvent(ev);
+}
+
+void EditorTabWidget::changeEvent(QEvent* event)
+{
+    QTabWidget::changeEvent(event);
+
+    if (event->type() == QEvent::PaletteChange) {
+        setTabBarHighlight(m_isTabBarHighlighted);
+    }
 }
 
 QString EditorTabWidget::generateTabTitleForUrl(const QUrl& filename) const
